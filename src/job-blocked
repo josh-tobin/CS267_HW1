@@ -7,4 +7,4 @@
 #SBATCH -e MyBlockedErrorFile.%j.err
 
 
-srun -n 1 -N 1 --cpu-freq=2400000 ./benchmark-blocked
+srun -n 1 -N 1 ./benchmark-blocked
