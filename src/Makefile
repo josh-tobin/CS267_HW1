@@ -2,14 +2,14 @@
 # This makefile is intended for the GNU C compiler. To change compilers, you need to type something like: "module swap PrgEnv-pgi PrgEnv-gnu" See the NERSC documentation for available compilers.
 
 CC = cc 
-OPT = -O1
+OPT = -march=corei7 -msse -msse2 -O3 -ffast-math -funsafe-math-optimizations -ftree-vectorizer-verbose=5 -fopt-info-optimized-vec
 CFLAGS = -Wall -std=gnu99 $(OPT)
 LDFLAGS = -Wall
 # librt is needed for clock_gettime
 LDLIBS = -lrt
 
-targets = benchmark-naive benchmark-blocked benchmark-blas
-objects = benchmark.o dgemm-naive.o dgemm-blocked.o dgemm-blas.o  
+targets = benchmark-naive benchmark-blocked benchmark-blas benchmark-blocked-unrolled benchmark-blocked-unrolled-inner test_loop
+objects = benchmark.o dgemm-naive.o dgemm-blocked.o dgemm-blas.o dgemm-blocked-unrolled.o dgemm-blocked-unrolled-inner.o test_loop.o
 
 .PHONY : default
 default : all
@@ -23,6 +23,12 @@ benchmark-blocked : benchmark.o dgemm-blocked.o
 	$(CC) -o $@ $^ $(LDLIBS)
 benchmark-blas : benchmark.o dgemm-blas.o
 	$(CC) -o $@ $^ $(LDLIBS)
+benchmark-blocked-unrolled : benchmark.o dgemm-blocked-unrolled.o
+	$(CC) -o $@ $^ $(LDLIBS)
+benchmark-blocked-unrolled-inner : benchmark.o dgemm-blocked-unrolled-inner.o
+	$(CC) -o $@ $^ $(LDLIBS)
+test-loop : test_loop.o
+	$(CC) -o $@ $^ $(LDLIBS)
 
 %.o : %.c
 	$(CC) -c $(CFLAGS) $<
@@ -30,3 +36,5 @@ benchmark-blas : benchmark.o dgemm-blas.o
 .PHONY : clean
 clean:
 	rm -f $(targets) $(objects)
+clean-out:
+	rm -f *.out *.err
