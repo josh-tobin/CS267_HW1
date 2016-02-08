@@ -9,19 +9,20 @@ const char* dgemm_desc = "Simple blocked dgemm.";
 /* This auxiliary subroutine performs a smaller dgemm operation
  *  C := C + A * B
  * where C is M-by-N, A is M-by-K, and B is K-by-N. */
-static void do_block (const int lda, const int M, const int N, const int K, const double* const A, const double* const B, double* const __restrict__ C)
+static void do_block (const int lda, const int M, const int N, const int K, const double* const A, const double* const B, double* __restrict__ C)
 {
   /* For each row i of A */
-  for (int i = 0; i < N; ++i) {
+  for (int i = 0; i < M; ++i) {
     /* For each column j of B */ 
-    for (int j = 0; j < M; ++j) 
+    for (int j = 0; j < N; ++j) 
     {
       /* Compute C(i,j) */
-      const double const *Bj = B + j*lda;
+      const double* const Bj = B + j*lda;
       double cij = C[i+j*lda];
       int l = 0;
-      for (int k = 0; k < K; ++k, l+= lda)
-	cij += Bj[k] * A[i + l];
+      for (int k = 0; k < K; ++k, l += lda) {
+	cij += A[i + l] * Bj[k];
+      }
       C[i+j*lda] = cij;
     }
   }
@@ -31,7 +32,7 @@ static void do_block (const int lda, const int M, const int N, const int K, cons
  *  C := C + A * B
  * where A, B, and C are lda-by-lda matrices stored in column-major format. 
  * On exit, A and B maintain their input values. */  
-void square_dgemm (const int lda, const double* const A, const double* const B, double* const __restrict__ C)
+void square_dgemm (const int lda, const double* const A, const double* const B, double* restrict C)
 {
   /* For each block-row of A */ 
   for (int i = 0; i < lda; i += BLOCK_SIZE) {
