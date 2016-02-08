@@ -2,14 +2,14 @@
 # This makefile is intended for the GNU C compiler. To change compilers, you need to type something like: "module swap PrgEnv-pgi PrgEnv-gnu" See the NERSC documentation for available compilers.
 
 CC = cc 
-OPT = -msse -msse2 -O3 -funsafe-math-optimizations -fopt-info-optimized-vec
+OPT = -msse -msse2 -O3 -funsafe-math-optimizations -fopt-info-all-vec
 CFLAGS = -Wall -std=gnu99 $(OPT)
 LDFLAGS = -Wall
 # librt is needed for clock_gettime
 LDLIBS = -lrt
 
 targets = benchmark-naive benchmark-blocked benchmark-blas benchmark-blocked-unrolled benchmark-blocked-unrolled-inner benchmark-blocked-ref test_loop
-objects = benchmark.o dgemm-naive.o dgemm-blocked.o dgemm-blas.o dgemm-blocked-unrolled.o dgemm-blocked-unrolled-inner.o dgemm-blocked-ref.o test_loop.o
+objects = benchmark-test.o dgemm-naive.o dgemm-blocked.o dgemm-blas.o dgemm-blocked-unrolled.o dgemm-blocked-unrolled-inner.o dgemm-blocked-ref.o test_loop.o
 
 .PHONY : default
 default : all
@@ -17,17 +17,17 @@ default : all
 .PHONY : all
 all : clean $(targets)
 
-benchmark-naive : benchmark.o dgemm-naive.o 
+benchmark-naive : benchmark-test.o dgemm-naive.o 
 	$(CC) -o $@ $^ $(LDLIBS)
-benchmark-blocked : benchmark.o dgemm-blocked.o
+benchmark-blocked : benchmark-test.o dgemm-blocked.o
 	$(CC) -o $@ $^ $(LDLIBS)
-benchmark-blocked-ref : benchmark.o dgemm-blocked-ref.o
+benchmark-blocked-ref : benchmark-test.o dgemm-blocked-ref.o
 	$(CC) -o $@ $^ $(LDLIBS)
-benchmark-blas : benchmark.o dgemm-blas.o
+benchmark-blas : benchmark-test.o dgemm-blas.o
 	$(CC) -o $@ $^ $(LDLIBS)
-benchmark-blocked-unrolled : benchmark.o dgemm-blocked-unrolled.o
+benchmark-blocked-unrolled : benchmark-test.o dgemm-blocked-unrolled.o
 	$(CC) -o $@ $^ $(LDLIBS)
-benchmark-blocked-unrolled-inner : benchmark.o dgemm-blocked-unrolled-inner.o
+benchmark-blocked-unrolled-inner : benchmark-test.o dgemm-blocked-unrolled-inner.o
 	$(CC) -o $@ $^ $(LDLIBS)
 test-loop : test_loop.o
 	$(CC) -o $@ $^ $(LDLIBS)
