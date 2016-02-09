@@ -188,8 +188,8 @@ static void do_block_cont_avx(const int lda, const int M, const int M_alloc, con
 
       for (int m = 0, n = 0; m < M_alloc*K; 
 	   m += M_alloc, n += N_alloc) {
-	if (i >= M) { assert(A[i + m] < 1e-10 && A[i + m] > -1e-10); }
-	if (j >= N) { assert(B[j + n] < 1e-10 && B[j + n] > -1e-10); }
+	//if (i >= M) { assert(A[i + m] < 1e-10 && A[i + m] > -1e-10); }
+	//if (j >= N) { assert(B[j + n] < 1e-10 && B[j + n] > -1e-10); }
 
         /*if (i >= M || j >= N) {
           printf("i = %d, j = %d, M{,_alloc} = {%d,%d}, N{,_alloc} = {%d,%d}: A[i,k] = %g, B[k,j] = %g\n",
