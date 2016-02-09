@@ -79,10 +79,8 @@ static void do_block_cont_simd(const int lda, const int M, const int N, const in
   __m128d a, b0, b1, c0, c1;
 
   for (int i = 0; i < M; i += 2) {
-    aligned_cpd Ai = A + i*K; // store col of A
-
     for (int j = 0; j < N; j += 2) {
-      aligned_cpd Bj = B + j*K; // store col of B
+      //aligned_cpd Bj = B + j*K; // store col of B
 
       c0 = _mm_loadu_pd(C + i + j*lda);
       c1 = _mm_loadu_pd(C + i + (j + 1)*lda); 
@@ -90,8 +88,8 @@ static void do_block_cont_simd(const int lda, const int M, const int N, const in
       //double cij = C[i + j*lda];
       for (int k = 0; k < K; ++k) {
         a  = _mm_load_pd(A + i + k*M); // load A[i:i+1,k]
-	b0 = _mm_load1_pd(B + k + j*K); // load B[k,j]
-	b1 = _mm_load1_pd(B + k + (j + 1)*K); // load B[k,j+1]
+	b0 = _mm_load1_pd(B + k*N + j); // load B[k,j]
+	b1 = _mm_load1_pd(B + k*N + j + 1); // load B[k,j+1]
 
 	c0 = _mm_add_pd(c0, _mm_mul_pd(a, b0)); // C[i:i+1,j] += A[i:i+1,k] * B[k,j]
 	c1 = _mm_add_pd(c1, _mm_mul_pd(a, b1)); // C[i:i+1,j+1] += A[i:i+1,k] * B[k,j+1]
@@ -163,7 +161,7 @@ static aligned_cpd copy(const int lda, aligned_cpd A, aligned_cpd B) {
 
       //printf("Copying B: num_B_blocks_done = %d\n", num_B_blocks_done);
 
-      copy_block_cmaj(lda, B + k + j*lda, B_copy + num_B_blocks_done * (BLOCK_SIZE * BLOCK_SIZE));
+      copy_block_rmaj(lda, B + k + j*lda, B_copy + num_B_blocks_done * (BLOCK_SIZE * BLOCK_SIZE));
     }
   }
 
