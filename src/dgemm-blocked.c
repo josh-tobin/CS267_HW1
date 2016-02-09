@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <immintrin.h>
+#include <assert.h>
 
 const char* dgemm_desc = "Simple blocked dgemm.";
 
@@ -72,7 +73,7 @@ static void do_block_cont(const int lda, const int M, const int N, const int K, 
   }
 }
 
-static void do_block_cont_simd(const int lda, const int M, const int N, const int K, aligned_cpd A, aligned_cpd B, aligned_rpd C)
+static void do_block_cont_simd(const int lda, const int M, const int M_alloc, const int N, const int N_alloc, const int K, aligned_cpd A, aligned_cpd B, aligned_rpd C)
 {
   // A is in col major; B is in row major (this is for a single block)
 
@@ -89,9 +90,9 @@ static void do_block_cont_simd(const int lda, const int M, const int N, const in
 
       //double cij = C[i + j*lda];
       for (int k = 0; k < K; ++k) {
-        a  = _mm_load_pd(A + i + k*M); // load A[i:i+1,k]
-	b0 = _mm_load1_pd(B + k*N + j); // load B[k,j]
-	b1 = _mm_load1_pd(B + k*N + j + 1); // load B[k,j+1]
+        a  = _mm_load_pd(A + i + k*M_alloc); // load A[i:i+1,k]
+	b0 = _mm_load1_pd(B + k*N_alloc + j); // load B[k,j]
+	b1 = _mm_load1_pd(B + k*N_alloc + j + 1); // load B[k,j+1]
 
 	c0 = _mm_add_pd(c0, _mm_mul_pd(a, b0)); // C[i:i+1,j] += A[i:i+1,k] * B[k,j]
 	c1 = _mm_add_pd(c1, _mm_mul_pd(a, b1)); // C[i:i+1,j+1] += A[i:i+1,k] * B[k,j+1]
@@ -105,21 +106,25 @@ static void do_block_cont_simd(const int lda, const int M, const int N, const in
     }
 
     for (; j < N; ++j) {
-      double cij = C[i + j*lda];
+      double cij_0 = C[i + j*lda];
+      double cij_1 = C[i + 1 + j*lda];
 
-      for (int m = 0, n = 0; m < K*M; m += M, n += N) {
-	cij += A[i + m] * B[j + n];
+      for (int m = 0, n = 0; m < K*M_alloc; m += M_alloc, n += N_alloc) {
+	cij_0 += A[i + m] * B[j + n];
+	cij_1 += A[i + 1 + m] * B[j + n];
       }
 
-      C[i + j*lda] = cij;
+      C[i + j*lda] = cij_0;
+      C[i + 1 + j*lda] = cij_1;
     }
   }
 
-  for (; i < M; ++i) {
-    for (j = 0; j < N; ++j) {
+  int i_max = i;
+  for (j = 0; j < N; ++j) {
+    for (i = i_max; i < M; ++i) {
       double cij = C[i + j*lda];
 
-      for (int m = 0, n = 0; m < K*M; m += M, n += N) {
+      for (int m = 0, n = 0; m < K*M_alloc; m += M_alloc, n += N_alloc) {
 	cij += A[i + m] * B[j + n];
       }
 
@@ -130,16 +135,22 @@ static void do_block_cont_simd(const int lda, const int M, const int N, const in
   return;
 }
 
-static void do_block_cont_avx(const int lda, const int M, const int N, const int K, aligned_cpd A, aligned_cpd B, aligned_rpd C)
+static void do_block_cont_avx(const int lda, const int M, const int M_alloc, const int N, const int N_alloc, const int K, aligned_cpd A, aligned_cpd B, aligned_rpd C)
 {
   // A is in col major; B is in row major (this is for a single block)
 
   __m256d a, b0, b1, b2, b3, c0, c1, c2, c3;
 
-  int i, j;
+  int i = 0;
+  int j = 0;
+
+  //printf("M{,_alloc} = {%d, %d}, N{,_alloc} = {%d, %d}\n",
+  // M, M_alloc, N, N_alloc); 
 
   for (i = 0; i < M - 3; i += 4) {
+    //printf("i = %d\n", i); 
     for (j = 0; j < N - 3; j += 4) {
+      //printf("i = %d, j = %d\n", i, j); 
       //aligned_cpd Bj = B + j*K; // store col of B
 
       c0 = _mm256_loadu_pd(C + i + j*lda);
@@ -148,11 +159,11 @@ static void do_block_cont_avx(const int lda, const int M, const int N, const int
       c3 = _mm256_loadu_pd(C + i + (j + 3)*lda); 
 
       for (int k = 0; k < K; ++k) {
-        a  = _mm256_load_pd(A + i + k*M); // load A[i:i+3,k]
-        b0 = _mm256_broadcast_sd(B + k*N + j); // load B[k,j]
-        b1 = _mm256_broadcast_sd(B + k*N + j + 1); // load B[k,j+1]
-	b2 = _mm256_broadcast_sd(B + k*N + j + 2); // load B[k,j+2]
-	b3 = _mm256_broadcast_sd(B + k*N + j + 3); // load B[k,j+3]
+        a  = _mm256_load_pd(A + i + k*M_alloc); // load A[i:i+3,k]
+        b0 = _mm256_broadcast_sd(B + k*N_alloc + j); // load B[k,j]
+        b1 = _mm256_broadcast_sd(B + k*N_alloc + j + 1); // load B[k,j+1]
+	b2 = _mm256_broadcast_sd(B + k*N_alloc + j + 2); // load B[k,j+2]
+	b3 = _mm256_broadcast_sd(B + k*N_alloc + j + 3); // load B[k,j+3]
 
         c0 = _mm256_add_pd(c0, _mm256_mul_pd(a, b0)); // C[i:i+3,j] += A[i:i+3,k] * B[k,j]
         c1 = _mm256_add_pd(c1, _mm256_mul_pd(a, b1)); // C[i:i+3,j+1] += A[i:i+3,k] * B[k,j+1]
@@ -168,30 +179,63 @@ static void do_block_cont_avx(const int lda, const int M, const int N, const int
     }
 
     for (; j < N; ++j) {
-      double cij = C[i + j*lda];
+      //printf("i = %d, j = %d\n", i, j);
 
-      for (int m = 0, n = 0; m < M*K; 
-	   m += M, n += N) {
-	cij += A[i + m] * B[j + n];
+      double cij_0 = C[i + j*lda];
+      double cij_1 = C[i + 1 + j*lda];
+      double cij_2 = C[i + 2 + j*lda];
+      double cij_3 = C[i + 3 + j*lda];
+
+      for (int m = 0, n = 0; m < M_alloc*K; 
+	   m += M_alloc, n += N_alloc) {
+	if (i >= M) { assert(A[i + m] < 1e-10 && A[i + m] > -1e-10); }
+	if (j >= N) { assert(B[j + n] < 1e-10 && B[j + n] > -1e-10); }
+
+        /*if (i >= M || j >= N) {
+          printf("i = %d, j = %d, M{,_alloc} = {%d,%d}, N{,_alloc} = {%d,%d}: A[i,k] = %g, B[k,j] = %g\n",
+                 i, j, M, M_alloc, N, N_alloc, A[i + m], B[j + n]);
+		 }*/
+
+	cij_0 += A[i + m] * B[j + n];
+	cij_1 += A[i + 1 + m] * B[j + n];
+	cij_2 += A[i + 2 + m] * B[j + n];
+	cij_3 += A[i + 3 + m] * B[j + n];
       }
 
-      C[i + j*lda] = cij;
+      C[i + j*lda] = cij_0;
+      C[i + 1 + j*lda] = cij_1;
+      C[i + 2 + j*lda] = cij_2;
+      C[i + 3 + j*lda] = cij_3;
     }
   }
 
-  for (; i < M; ++i) {
+  /*for (; i < M; ++i) {
+    //printf("i = %d\n", i); 
     for (j = 0; j < N; ++j) {
+      //printf("i = %d, j = %d\n", i, j); 
+
       double cij = C[i + j*lda];
+
+      //printf("i = %d, j = %d, M{,_alloc} = {%d,%d}, N{,_alloc} = {%d,%d}: A[i,k] = %g, B[k,j] = %g\n",
+	     //	     i, j, M, M_alloc, N, N_alloc, A[i + k*M_alloc], B[j + k*N_alloc]); 
 
       for (int k = 0; k < K; ++k) {
-	cij += A[i + k*M] * B[j + k*N];
+        if (i >= M) { assert(A[i + k*M_alloc] < 1e-10 && A[i + k*M_alloc] > -1e-10); }
+        if (j >= N) { assert(B[j + k*N_alloc] < 1e-10 && B[j + k*N_alloc] > -1e-10); }
+
+	//if (i >= M || j >= N) {
+	  //  printf("i = %d, j = %d, M{,_alloc} = {%d,%d}, N{,_alloc} = {%d,%d}: A[i,k] = %g, B[k,j] = %g\n",
+		 //	 i, j, M, M_alloc, N, N_alloc, A[i + k*M_alloc], B[j + k*N_alloc]);
+	  //}
+
+	cij += A[i + k*M_alloc] * B[j + k*N_alloc];
       }
 
       C[i + j*lda] = cij;
     }
-  }
+    }*/
 
-  //do_block_cont_simd(lda, M - i, N, K, A + i, B, C + i); 
+  do_block_cont_simd(lda, M - i, M_alloc, N, N_alloc, K, A + i, B, C + i); 
 }
 
 // src stored in column major; dest stored in row major
@@ -455,24 +499,30 @@ void square_dgemm (const int lda, aligned_cpd A, aligned_cpd B, aligned_rpd C)
 
   /* For each block-row of A */ 
   for (int i = 0; i < lda; i += BLOCK_SIZE) {
+    int M = min(BLOCK_SIZE, lda-i);
+
     /* For each block-column of B */
     for (int k = 0; k < lda; k += BLOCK_SIZE, ++num_A_blocks_done) {
+      //int N = min(BLOCK_SIZE, lda-j);
+
       aligned_cpd Ac_block = Ac + (((k*lda_by_sz + i) / BLOCK_SIZE) * sz2);
 
       /* Accumulate block dgemms into block of C */
       for (int j = 0; j < lda; j += BLOCK_SIZE)
       {
 	/* Correct block dimensions if block "goes off edge of" the matrix */
-	int M = BLOCK_SIZE; //min (BLOCK_SIZE, lda-i);
-	int N = BLOCK_SIZE; //min (BLOCK_SIZE, lda-j);
+	//int M = BLOCK_SIZE; //min (BLOCK_SIZE, lda-i);
+	int N = min (BLOCK_SIZE, lda-j);
 	int K = BLOCK_SIZE; //min (BLOCK_SIZE, lda-k);
+
+	//printf("square_dgemm: M = %d, N = %d, K = %d\n", M, N, K);
 
 	int B_block_index = (j * lda_by_sz + k) / BLOCK_SIZE;
 
 	//printf("dgemm: A_block_index = %d, B_block_index = %d\n", ((k * lda_by_sz + i) / BLOCK_SIZE), B_block_index); 
 
 	/* Perform individual block dgemm */
-	do_block_cont_avx(lda, M, N, K, Ac_block, Bc + B_block_index * sz2, C + i + j*lda);
+	do_block_cont_avx(lda, M, BLOCK_SIZE, N, BLOCK_SIZE, K, Ac_block, Bc + B_block_index * sz2, C + i + j*lda);
       }
     }
   }
