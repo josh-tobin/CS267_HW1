@@ -74,7 +74,7 @@ static void do_block_cont(const int lda, const int M, const int N, const int K, 
 
 static void do_block_cont_simd(const int lda, const int M, const int N, const int K, aligned_cpd A, aligned_cpd B, aligned_rpd C)
 {
-  // A is in col major; B is in column major (this is for a single block)
+  // A is in col major; B is in row major (this is for a single block)
 
   __m128d a, b0, b1, c0, c1;
 
@@ -106,7 +106,7 @@ static void do_block_cont_simd(const int lda, const int M, const int N, const in
 
 static void do_block_cont_avx(const int lda, const int M, const int N, const int K, aligned_cpd A, aligned_cpd B, aligned_rpd C)
 {
-  // A is in col major; B is in column major (this is for a single block)
+  // A is in col major; B is in row major (this is for a single block)
 
   __m256d a, b0, b1, b2, b3, c0, c1, c2, c3;
 
