@@ -13,7 +13,7 @@ const char* dgemm_desc = "Simple blocked dgemm.";
 
 typedef const double* const __attribute__((aligned(32))) aligned_cpd;
 typedef       double*       __attribute__((aligned(32))) aligned_pd;
-typedef       double* restrict __attribute__((aligned(32))) aligned_rpd;
+typedef       double* restrict aligned_rpd;
 
 //static aligned_pd _memalign(size_t alignment, size_t size) {
 //  void *buf = NULL;
@@ -165,7 +165,13 @@ static void do_block_cont_avx(const int lda, const int M, const int M_alloc, con
 	b2 = _mm256_broadcast_sd(B + k*N_alloc + j + 2); // load B[k,j+2]
 	b3 = _mm256_broadcast_sd(B + k*N_alloc + j + 3); // load B[k,j+3]
 
-        c0 = _mm256_add_pd(c0, _mm256_mul_pd(a, b0)); // C[i:i+3,j] += A[i:i+3,k] * B[k,j]
+	// trying out fused multiply-add
+	//c0 = _mm256_fmadd_pd(a, b0, c0);
+	//c1 = _mm256_fmadd_pd(a, b1, c1);
+	//c2 = _mm256_fmadd_pd(a, b2, c2);
+	//c3 = _mm256_fmadd_pd(a, b3, c3); 
+
+	c0 = _mm256_add_pd(c0, _mm256_mul_pd(a, b0)); // C[i:i+3,j] += A[i:i+3,k] * B[k,j]
         c1 = _mm256_add_pd(c1, _mm256_mul_pd(a, b1)); // C[i:i+3,j+1] += A[i:i+3,k] * B[k,j+1]
 	c2 = _mm256_add_pd(c2, _mm256_mul_pd(a, b2)); // etc.
 	c3 = _mm256_add_pd(c3, _mm256_mul_pd(a, b3)); 
