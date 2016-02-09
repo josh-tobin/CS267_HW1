@@ -6,4 +6,4 @@
 #SBATCH -o MyBLASOutputFile.%j.out
 #SBATCH -e MyBLASErrorFile.%j.err
 
-srun -n 1 -N 1 --cpu-freq=2400000 ./benchmark-blas
+srun -n 1 -N 1 ./benchmark-blas

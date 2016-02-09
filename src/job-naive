@@ -7,4 +7,4 @@
 #SBATCH -e MyErrorFile.%j.err
 
 
-srun -n 1 -N 1 --cpu-freq=2400000 ./benchmark-naive
+srun -n 1 -N 1 ./benchmark-naive
