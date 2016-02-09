@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <emmintrin.h>
 
 const char* dgemm_desc = "Simple blocked dgemm.";
 
@@ -55,18 +56,52 @@ static void do_block_cont(const int lda, const int M, const int N, const int K, 
   //print_matrix_rmaj(A, BLOCK_SIZE);
   //print_matrix_cmaj(B, BLOCK_SIZE);
 
-  for (int i = 0; i < M; ++i) {
+  for (int i = 0; i < M; i += 2) {
     aligned_cpd Ai = A + i*K; // store row of A
 
     for (int j = 0; j < N; ++j) {
       aligned_cpd Bj = B + j*K; // store col of B
-
+      
       double cij = C[i + j*lda];
-      for (int k = 0; k < K; ++k) {
-	cij += Ai[k] * Bj[k];
+      for (int k = 0; k < K; k += 2) {
+        cij += Ai[k] * Bj[k];
       }
 
       C[i + j*lda] = cij;
+    }
+  }
+}
+
+static void do_block_cont_simd(const int lda, const int M, const int N, const int K, aligned_cpd A, aligned_cpd B, aligned_rpd C)
+{
+  // A is in col major; B is in column major (this is for a single block)
+
+  __m128d a, b0, b1, c0, c1;
+
+  for (int i = 0; i < M; i += 2) {
+    aligned_cpd Ai = A + i*K; // store col of A
+
+    for (int j = 0; j < N; j += 2) {
+      aligned_cpd Bj = B + j*K; // store col of B
+
+      c0 = _mm_loadu_pd(C + i + j*lda);
+      c1 = _mm_loadu_pd(C + i + (j + 1)*lda); 
+
+      //double cij = C[i + j*lda];
+      for (int k = 0; k < K; ++k) {
+        a  = _mm_load_pd(A + i + k*M); // load A[i:i+1,k]
+	b0 = _mm_load1_pd(B + k + j*K); // load B[k,j]
+	b1 = _mm_load1_pd(B + k + (j + 1)*K); // load B[k,j+1]
+
+	c0 = _mm_add_pd(c0, _mm_mul_pd(a, b0)); // C[i:i+1,j] += A[i:i+1,k] * B[k,j]
+	c1 = _mm_add_pd(c1, _mm_mul_pd(a, b1)); // C[i:i+1,j+1] += A[i:i+1,k] * B[k,j+1]
+      }
+
+      // write value of C back to memory
+      _mm_storeu_pd(C + i + j*lda, c0);
+      _mm_storeu_pd(C + i + (j + 1)*lda, c1); 
+
+      //C[i + j*lda] = cij;
     }
   }
 }
@@ -116,7 +151,7 @@ static aligned_cpd copy(const int lda, aligned_cpd A, aligned_cpd B) {
 
       //printf("Copying A: num_A_blocks_done = %d\n", num_A_blocks_done);
 
-      copy_block_rmaj(lda, A + i + k*lda, A_copy + num_A_blocks_done * (BLOCK_SIZE * BLOCK_SIZE));
+      copy_block_cmaj(lda, A + i + k*lda, A_copy + num_A_blocks_done * (BLOCK_SIZE * BLOCK_SIZE));
     }
   }
 
@@ -272,7 +307,7 @@ void square_dgemm (const int lda, aligned_cpd A, aligned_cpd B, aligned_rpd C)
 	//printf("dgemm: A_block_index = %d, B_block_index = %d\n", ((k * lda_by_sz + i) / BLOCK_SIZE), B_block_index); 
 
 	/* Perform individual block dgemm */
-	do_block_cont(lda, M, N, K, Ac_block, Bc + B_block_index * sz2, C + i + j*lda);
+	do_block_cont_simd(lda, M, N, K, Ac_block, Bc + B_block_index * sz2, C + i + j*lda);
       }
     }
   }
