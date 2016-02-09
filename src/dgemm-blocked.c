@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <emmintrin.h>
+#include <immintrin.h>
 
 const char* dgemm_desc = "Simple blocked dgemm.";
 
@@ -10,9 +10,9 @@ const char* dgemm_desc = "Simple blocked dgemm.";
 
 #define min(a,b) (((a)<(b))?(a):(b))
 
-typedef const double* const __attribute__((aligned(16))) aligned_cpd;
-typedef       double*       __attribute__((aligned(16))) aligned_pd;
-typedef       double* restrict __attribute__((aligned(16))) aligned_rpd;
+typedef const double* const __attribute__((aligned(32))) aligned_cpd;
+typedef       double*       __attribute__((aligned(32))) aligned_pd;
+typedef       double* restrict __attribute__((aligned(32))) aligned_rpd;
 
 //static aligned_pd _memalign(size_t alignment, size_t size) {
 //  void *buf = NULL;
@@ -104,6 +104,44 @@ static void do_block_cont_simd(const int lda, const int M, const int N, const in
   }
 }
 
+static void do_block_cont_avx(const int lda, const int M, const int N, const int K, aligned_cpd A, aligned_cpd B, aligned_rpd C)
+{
+  // A is in col major; B is in column major (this is for a single block)
+
+  __m256d a, b0, b1, b2, b3, c0, c1, c2, c3;
+
+  for (int i = 0; i < M; i += 4) {
+    for (int j = 0; j < N; j += 4) {
+      //aligned_cpd Bj = B + j*K; // store col of B
+
+      c0 = _mm256_loadu_pd(C + i + j*lda);
+      c1 = _mm256_loadu_pd(C + i + (j + 1)*lda);
+      c2 = _mm256_loadu_pd(C + i + (j + 2)*lda);
+      c3 = _mm256_loadu_pd(C + i + (j + 3)*lda); 
+
+      for (int k = 0; k < K; ++k) {
+        a  = _mm256_load_pd(A + i + k*M); // load A[i:i+3,k]
+        b0 = _mm256_broadcast_sd(B + k*N + j); // load B[k,j]
+        b1 = _mm256_broadcast_sd(B + k*N + j + 1); // load B[k,j+1]
+	b2 = _mm256_broadcast_sd(B + k*N + j + 2); // load B[k,j+2]
+	b3 = _mm256_broadcast_sd(B + k*N + j + 3); // load B[k,j+3]
+
+        c0 = _mm256_add_pd(c0, _mm256_mul_pd(a, b0)); // C[i:i+3,j] += A[i:i+3,k] * B[k,j]
+        c1 = _mm256_add_pd(c1, _mm256_mul_pd(a, b1)); // C[i:i+3,j+1] += A[i:i+3,k] * B[k,j+1]
+	c2 = _mm256_add_pd(c2, _mm256_mul_pd(a, b2)); // etc.
+	c3 = _mm256_add_pd(c3, _mm256_mul_pd(a, b3)); 
+      }
+
+      // write value of C back to memory
+      _mm256_storeu_pd(C + i + j*lda, c0);
+      _mm256_storeu_pd(C + i + (j + 1)*lda, c1);
+      _mm256_storeu_pd(C + i + (j + 2)*lda, c2);
+      _mm256_storeu_pd(C + i + (j + 3)*lda, c3);
+    }
+  }
+}
+
+
 // src stored in column major; dest stored in row major
 static void copy_block_rmaj(const int lda, aligned_cpd src, aligned_pd dest) {
   // r indexes a row; s indexes a col
@@ -130,7 +168,7 @@ static void copy_block_cmaj(const int lda, aligned_cpd src, aligned_pd dest) {
 static aligned_cpd copy(const int lda, aligned_cpd A, aligned_cpd B) {
   aligned_pd buf = NULL;
 
-  posix_memalign((void*) &buf, 16, 2*lda*lda*sizeof(double));
+  posix_memalign((void*) &buf, 32, 2*lda*lda*sizeof(double));
   //if (ret != 0) { 
   //  perror("copy: failed to allocate memory."); 
   //  return NULL; 
@@ -305,7 +343,7 @@ void square_dgemm (const int lda, aligned_cpd A, aligned_cpd B, aligned_rpd C)
 	//printf("dgemm: A_block_index = %d, B_block_index = %d\n", ((k * lda_by_sz + i) / BLOCK_SIZE), B_block_index); 
 
 	/* Perform individual block dgemm */
-	do_block_cont_simd(lda, M, N, K, Ac_block, Bc + B_block_index * sz2, C + i + j*lda);
+	do_block_cont_avx(lda, M, N, K, Ac_block, Bc + B_block_index * sz2, C + i + j*lda);
       }
     }
   }
