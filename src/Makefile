@@ -6,10 +6,10 @@ OPT = -march=native -msse -msse2 -mavx2 -O3 -funsafe-math-optimizations -fopt-in
 CFLAGS = -Wall -std=gnu99 $(OPT)
 LDFLAGS = -Wall
 # librt is needed for clock_gettime
-LDLIBS = -lrt
+LDLIBS = -librt
 
-targets = benchmark-naive benchmark-blocked benchmark-blas benchmark-blocked-unrolled benchmark-blocked-unrolled-inner benchmark-blocked-ref test_loop
-objects = benchmark.o dgemm-naive.o dgemm-blocked.o dgemm-blas.o dgemm-blocked-unrolled.o dgemm-blocked-unrolled-inner.o dgemm-blocked-ref.o test_loop.o
+targets = benchmark-naive benchmark-blocked benchmark-blas benchmark-multi-blocked
+objects = benchmark.o dgemm-naive.o dgemm-blocked.o dgemm-blas.o dgemm-multi-blocked.o
 
 .PHONY : default
 default : all
@@ -21,15 +21,10 @@ benchmark-naive : benchmark.o dgemm-naive.o
 	$(CC) -o $@ $^ $(LDLIBS)
 benchmark-blocked : benchmark.o dgemm-blocked.o
 	$(CC) -o $@ $^ $(LDLIBS)
-benchmark-blocked-ref : benchmark.o dgemm-blocked-ref.o
-	$(CC) -o $@ $^ $(LDLIBS)
 benchmark-blas : benchmark.o dgemm-blas.o
 	$(CC) -o $@ $^ $(LDLIBS)
-benchmark-blocked-unrolled : benchmark.o dgemm-blocked-unrolled.o
-	$(CC) -o $@ $^ $(LDLIBS)
-benchmark-blocked-unrolled-inner : benchmark.o dgemm-blocked-unrolled-inner.o
-	$(CC) -o $@ $^ $(LDLIBS)
-test-loop : test_loop.o
+
+benchmark-multi-blocked : benchmark.o dgemm-multi-blocked.o
 	$(CC) -o $@ $^ $(LDLIBS)
 
 %.o : %.c
