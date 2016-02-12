@@ -23,8 +23,9 @@ benchmark-blocked : benchmark.o dgemm-blocked.o
 	$(CC) -o $@ $^ $(LDLIBS)
 benchmark-blas : benchmark.o dgemm-blas.o
 	$(CC) -o $@ $^ $(LDLIBS)
-
 benchmark-multi-blocked : benchmark.o dgemm-multi-blocked.o
+	$(CC) -o $@ $^ $(LDLIBS)
+benchmark-single-blocked : benchmark.o dgemm-single-blocked.o
 	$(CC) -o $@ $^ $(LDLIBS)
 
 %.o : %.c

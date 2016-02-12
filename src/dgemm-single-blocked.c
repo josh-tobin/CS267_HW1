@@ -8,9 +8,6 @@ const char* dgemm_desc = "Simple blocked dgemm.";
 #if !defined(BLOCK_SIZE)
 #define BLOCK_SIZE 32
 #endif
-#if !defined(OUTER_BLOCK_SIZE)
-#define OUTER_BLOCK_SIZE 196
-#endif
 
 #define min(a,b) (((a)<(b))?(a):(b))
 
@@ -349,12 +346,7 @@ static aligned_cpd copy(const int lda, aligned_cpd A, aligned_cpd B) {
 
 // copy A and B into arrays padded so that their col and row #s (respectively)
 // are multiples of BLOCK_SIZE
-// note: updated for multi-blocked
 static aligned_cpd copy_padded(const int lda, const int lda_pad, aligned_cpd A, aligned_cpd B) {
-  const int sz2 = BLOCK_SIZE*BLOCK_SIZE;
-  const int outer_sz2 = OUTER_BLOCK_SIZE*OUTER_BLOCK_SIZE;
-  const int outer_sz_by_sz = OUTER_BLOCK_SIZE/BLOCK_SIZE;
-
   aligned_pd buf = NULL;
 
   posix_memalign((void*) &buf, 32, 2*lda_pad*lda_pad*sizeof(double));
@@ -365,34 +357,23 @@ static aligned_cpd copy_padded(const int lda, const int lda_pad, aligned_cpd A, 
   aligned_pd A_copy_head = &(*A_copy);
   aligned_pd B_copy_head = &(*B_copy);
 
-  int num_outer_A_blocks_done = 0;
-  
+  int num_A_blocks_done = 0;
   // copy A; i indexes rows, k indexes columns
-  for (int outer_k = 0; outer_k < lda; outer_k += OUTER_BLOCK_SIZE) {
-    for (int outer_i = 0; outer_i < lda; outer_i += OUTER_BLOCK_SIZE, ++num_outer_A_blocks_done) {
-      int num_inner_A_blocks_done = 0;
-      for (int i = 0; i < min(OUTER_BLOCK_SIZE, lda - outer_i); i += BLOCK_SIZE) {
-        for (int k = 0; k < min(OUTER_BLOCK_SIZE, lda - outer_k); k += BLOCK_SIZE, ++num_inner_A_blocks_done) {
-          // at this point (k/BLOCK_SIZE) * (lda / BLOCK_SIZE) + (i/BLOCK_SIZE) blocks have been written
+  for (int k = 0; k < lda; k += BLOCK_SIZE) {
+    for (int i = 0; i < lda; i += BLOCK_SIZE, ++num_A_blocks_done) {
+      // at this point (k/BLOCK_SIZE) * (lda / BLOCK_SIZE) + (i/BLOCK_SIZE) blocks have been written
 
-          copy_block_cmaj_pad(lda, min(BLOCK_SIZE,lda-outer_i-i), min(BLOCK_SIZE,lda-outer_k-k), A + outer_i + i + (outer_k + k)*lda, A_copy + k*BLOCK_SIZE + i*outer_sz_by_sz*BLOCK_SIZE + num_outer_A_blocks_done*outer_sz2);
-        }
-      }
+      copy_block_cmaj_pad(lda, min(BLOCK_SIZE,lda-i), min(BLOCK_SIZE,lda-k), A + i + k*lda, A_copy + num_A_blocks_done * (BLOCK_SIZE * BLOCK_SIZE));
     }
   }
 
-  int num_outer_B_blocks_done = 0;
+  int num_B_blocks_done = 0;
   // copy B; k indexes rows, j indexes cols
-  for (int outer_j = 0; outer_j < lda; outer_j += OUTER_BLOCK_SIZE) {
-    for (int outer_k = 0; outer_k < lda; outer_k += OUTER_BLOCK_SIZE, ++num_outer_B_blocks_done) {
-      int num_inner_B_blocks_done = 0;
-      for (int j = 0; j < min(OUTER_BLOCK_SIZE, lda - outer_j); j += BLOCK_SIZE) {
-        for (int k = 0; k < min(OUTER_BLOCK_SIZE, lda - outer_k); k+= BLOCK_SIZE, ++num_inner_B_blocks_done) {
-          // at this point (j/BLOCK_SIZE) * (lda / BLOCK_SIZE) + (k/BLOCK_SIZE) blocks have been written
+  for (int j = 0; j < lda; j += BLOCK_SIZE) {
+    for (int k = 0; k < lda; k+= BLOCK_SIZE, ++num_B_blocks_done) {
+      // at this point (j/BLOCK_SIZE) * (lda / BLOCK_SIZE) + (k/BLOCK_SIZE) blocks have been written
 
-          copy_block_rmaj_pad(lda, min(BLOCK_SIZE,lda-outer_k-k), min(BLOCK_SIZE,lda-outer_j-j), B + k + outer_k + (j+outer_j)*lda, B_copy + k*BLOCK_SIZE + j*outer_sz_by_sz*BLOCK_SIZE + num_outer_B_blocks_done*outer_sz2);
-        }
-      }
+      copy_block_rmaj_pad(lda, min(BLOCK_SIZE,lda-k), min(BLOCK_SIZE,lda-j), B + k + j*lda, B_copy + num_B_blocks_done * (BLOCK_SIZE * BLOCK_SIZE));
     }
   }
 
@@ -499,11 +480,9 @@ static int round_up_to_mult(int lda, int sz) {
  *  C := C + A * B
  * where A, B, and C are lda-by-lda matrices stored in column-major format. 
  * On exit, A and B maintain their input values. */  
- // note: updated for multi-blocked
-
 void square_dgemm (const int lda, aligned_cpd A, aligned_cpd B, aligned_rpd C)
 {
-  int lda_pad = round_up_to_mult(lda, OUTER_BLOCK_SIZE);
+  int lda_pad = round_up_to_mult(lda, BLOCK_SIZE);
   aligned_cpd buf = copy_padded(lda, lda_pad, A, B);
   if (buf == NULL) {
     perror("Failed to allocate memory for copying.");
@@ -513,58 +492,43 @@ void square_dgemm (const int lda, aligned_cpd A, aligned_cpd B, aligned_rpd C)
   aligned_cpd Ac  = buf;
   aligned_cpd Bc  = buf + (lda_pad*lda_pad);
 
-  //printf(lda);
-  //print_array(Ac + 32*32*5, 20);
-  //print_array(Bc + 32*32*4, 20);
+  int num_A_blocks_done = 0;
   
   const int lda_by_sz = lda_pad / BLOCK_SIZE;
   const int sz2 = BLOCK_SIZE * BLOCK_SIZE;
-  const int lda_by_outer_sz = lda_pad / OUTER_BLOCK_SIZE;
-  const int outer_sz2 = OUTER_BLOCK_SIZE * OUTER_BLOCK_SIZE;
-  const int outer_sz_by_sz = OUTER_BLOCK_SIZE / BLOCK_SIZE;
 
-  /* For each outer block-row of A */
-  int num_outer_A_blocks_done = 0;
+  //print_matrix_cmaj(A, lda);
+  //print_matrix_cmaj_blocks(Ac, lda_pad); 
 
-  for (int outer_i = 0; outer_i < lda; outer_i += OUTER_BLOCK_SIZE) {
-    int outer_M = min(OUTER_BLOCK_SIZE, lda-outer_i);
+  //print_matrix_cmaj(B, lda);
+  //print_matrix_rmaj_blocks(Bc, lda_pad);
 
-    for (int outer_k = 0; outer_k < lda; outer_k += OUTER_BLOCK_SIZE) {
-      aligned_cpd Ac_outer_block = Ac + outer_i*OUTER_BLOCK_SIZE + outer_k*lda_pad;
-      int outer_K = min(OUTER_BLOCK_SIZE, lda-outer_k);
+  /* For each block-row of A */ 
+  for (int i = 0; i < lda; i += BLOCK_SIZE) {
+    int M = min(BLOCK_SIZE, lda-i);
 
-      for (int outer_j = 0; outer_j < lda; outer_j += OUTER_BLOCK_SIZE) {
-        int outer_N = min(OUTER_BLOCK_SIZE, lda-outer_j);
-        aligned_rpd C_target = C + outer_i + outer_j*lda;
+    /* For each block-column of B */
+    for (int k = 0; k < lda; k += BLOCK_SIZE, ++num_A_blocks_done) {
+      //int N = min(BLOCK_SIZE, lda-j);
 
-        aligned_cpd Bc_outer_block = Bc + outer_k*OUTER_BLOCK_SIZE + outer_j*lda_pad;
+      aligned_cpd Ac_block = Ac + (((k*lda_by_sz + i) / BLOCK_SIZE) * sz2);
 
-        int num_inner_A_blocks_done = 0;
+      /* Accumulate block dgemms into block of C */
+      for (int j = 0; j < lda; j += BLOCK_SIZE)
+      {
+	/* Correct block dimensions if block "goes off edge of" the matrix */
+	//int M = BLOCK_SIZE; //min (BLOCK_SIZE, lda-i);
+	int N = min (BLOCK_SIZE, lda-j);
+	int K = BLOCK_SIZE; //min (BLOCK_SIZE, lda-k);
 
-        /* For each inner block-row of the current outer block of A */ 
-        for (int i = 0; i < outer_M; i += BLOCK_SIZE) {
-          int M = min(BLOCK_SIZE, outer_M-i);
+	//printf("square_dgemm: M = %d, N = %d, K = %d\n", M, N, K);
 
-          /* For each inner block-column of the current outer block of B */
-          for (int k = 0; k < outer_K; k += BLOCK_SIZE, ++num_inner_A_blocks_done) {
-            int K = BLOCK_SIZE;
+	int B_block_index = (j * lda_by_sz + k) / BLOCK_SIZE;
 
-            aligned_cpd Ac_block = Ac_outer_block + i*outer_sz_by_sz*BLOCK_SIZE + k*BLOCK_SIZE;
+	//printf("dgemm: A_block_index = %d, B_block_index = %d\n", ((k * lda_by_sz + i) / BLOCK_SIZE), B_block_index); 
 
-            /* Accumulate block dgemms into block of C */
-            for (int j = 0; j < outer_N; j += BLOCK_SIZE)
-            {
-  	/* Correct block dimensions if block "goes off edge of" the matrix */
-  	int N = min (BLOCK_SIZE, outer_N-j);
-
-    aligned_cpd Bc_block = Bc_outer_block + k*BLOCK_SIZE + j*OUTER_BLOCK_SIZE;
-
-  	/* Perform individual block dgemm */
-  	//do_block_cont_avx(lda, M, BLOCK_SIZE, N, BLOCK_SIZE, K, Ac_block, Bc_block, C + outer_i + i + (outer_j + j)*lda);
-    do_block_cont_avx(lda, M, BLOCK_SIZE, N, BLOCK_SIZE, K, Ac_block, Bc_block, C_target + i + j*lda);
-            }
-          }
-        }
+	/* Perform individual block dgemm */
+	do_block_cont_avx(lda, M, BLOCK_SIZE, N, BLOCK_SIZE, K, Ac_block, Bc + B_block_index * sz2, C + i + j*lda);
       }
     }
   }
