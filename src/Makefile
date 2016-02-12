@@ -6,7 +6,7 @@ OPT = -march=native -msse -msse2 -mavx2 -O3 -funsafe-math-optimizations -fopt-in
 CFLAGS = -Wall -std=gnu99 $(OPT)
 LDFLAGS = -Wall
 # librt is needed for clock_gettime
-LDLIBS = -librt
+LDLIBS = -lrt
 
 targets = benchmark-naive benchmark-blocked benchmark-blas benchmark-multi-blocked
 objects = benchmark.o dgemm-naive.o dgemm-blocked.o dgemm-blas.o dgemm-multi-blocked.o
